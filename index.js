@@ -1,4 +1,5 @@
 const express = require("express");
+
 const mongoose = require("mongoose");
 const bcryptjs = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -6,14 +7,20 @@ const authenticate = require("./middleware/auth");
 const cookieParser = require("cookie-parser");
 const app = express();
 const cors = require("cors");
-
+require("dotenv").config();
+const port = process.env || 8000;
 //Import Routes
 const Prod = require("./routes/productRoute");
 const Brand = require("./routes/brandRoutes");
 const Category = require("./routes/categoryRoutes");
 const Auth = require("./routes/userRoutes");
 const Cart = require("./routes/cartRoutes");
+const Type = require("./routes/typesRoute");
+const SubCategory = require("./routes/subCategoryRoute");
 
+const stripe = require("stripe")(
+  "sk_test_51JvwvmSGr3DzIFbiAavqlpOqi6zNPywkGj5EQ83r9Gj4OjeWQAcSLUgNxXdnrk6IGCpgpim8u8S5xC5IZ5C3XdfW00RWrx5LpB"
+);
 // Import Schema
 
 const uri =
@@ -37,6 +44,7 @@ const corsOptions = {
   credentials: true, // Allow cookies and authentication headers
   optionsSuccessStatus: 204, // No content status for preflight requests
 };
+
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -46,189 +54,35 @@ app.use("/", Brand);
 app.use("/", Category);
 app.use("/", Auth);
 app.use("/", Cart);
+app.use("/", Type);
+app.use("/", SubCategory);
 
-// app.post("/api/register", async (req, res, next) => {
-//   try {
-//     const { username, email, password } = req.body;
-//     const isExist = await Users.findOne({ email });
-//     if (isExist) {
-//       res.status(400).send("User already exist");
-//     } else {
-//       const user = new Users({
-//         username,
-//         email,
-//       });
-//       bcryptjs.hash(password, 10, (err, hashedPassword) => {
-//         if (err) next(err);
-//         user.set("password", hashedPassword);
-//         user.save((error) => {
-//           if (error) next(error);
-//           return res.status(200).send("registered");
-//         });
-//       });
-//     }
-//   } catch (error) {
-//     res.status(500).send("Server Error");
-//     console.log(error, "error");
-//   }
-// });
+app.use("/api/create-checkout-session", async (req, res) => {
+  const { products } = req.body;
 
-// app.post("/api/login", async (req, res) => {
-//   const { email, password } = req.body;
-//   const user = await Users.findOne({ email });
-//   if (!user) res.status(401).send("invalid username or password ");
-//   else {
-//     const validate = await bcryptjs.compare(password, user.password);
-//     if (!validate) res.status(401).send("invalid username or password ");
-//     else {
-//       const payload = {
-//         id: user?._id,
-//         username: user?.username,
-//       };
-//       const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY || "this is screte key";
-//       jwt.sign(payload, JWT_SECRET_KEY, { expiresIn: 86400 }, (err, token) => {
-//         if (err) res.json({ message: err });
-//         return res.status(200).json({ user, token });
-//       });
-//     }
-//   }
-// });
+  const lineItems = products?.map((product) => ({
+    price_data: {
+      currency: "inr",
+      product_data: {
+        name: product.title,
+        images: product.images,
+      },
+      unit_amount: product.price * 100,
+    },
+    quantity: 1,
+  }));
 
-// app.post("/api/Post", authenticate, async (req, res) => {
-//   const { caption, desc, image } = req.body;
-//   const { user } = req;
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    line_items: lineItems,
+    mode: "payment",
+    success_url: "http://localhost:3000/sucess",
+    cancel_url: "http://localhost:3000/cancel",
+  });
 
-//   if (!caption || !desc || !image)
-//     res.status(401).send("Please fill all the fields");
-//   else {
-//     const createPost = new Post({
-//       caption,
-//       desc,
-//       image,
-//       user: user,
-//     });
-//     await createPost.save();
-//     res.status(200).send("added");
-//   }
-// });
+  res.json({ id: session.id });
+});
 
-// app.get("/api/profile", authenticate, async (req, res) => {
-//   try {
-//     const { user } = req;
-//     const profileData = await Post.find({ user: user._id }).populate(
-//       "user",
-//       "_id, username"
-//     );
-//     res.status(200).json({ profileData });
-//   } catch (error) {
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.get("/api/getAllPosts", authenticate, async (req, res) => {
-//   try {
-//     const allPost = await Post.find().populate("user", "_id username email");
-
-//     res.status(200).json({ allPost });
-//   } catch (error) {
-//     console.log(error);
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.get("/api/people", authenticate, async (req, res) => {
-//   try {
-//     const { id } = req.query;
-//     const { user } = req;
-//     const allPost = await Post.find({ user: id }).populate(
-//       "user",
-//       "_id username email"
-//     );
-//     const [followed] = await Contact.find({
-//       followerId: user._id,
-//       followedId: id,
-//     });
-
-//     res.status(200).json({ allPost, isFollowed: !!followed });
-//   } catch (error) {
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.post("/api/follow", authenticate, async (req, res) => {
-//   try {
-//     const { id } = req.body;
-//     const { user } = req;
-
-//     if (!id) return res.status(400).send("id cannot be empty");
-//     const [followedUsers] = await Users.find({ _id: id });
-//     console.log(followedUsers, "followedUsers");
-//     const followUser = new Contact({
-//       followerId: user._id,
-//       followedId: followedUsers._id,
-//     });
-//     await followUser.save();
-//     res.status(200).send("success");
-//   } catch (error) {
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.post("/api/unfollow", authenticate, async (req, res) => {
-//   try {
-//     const { id } = req.body;
-//     const { user } = req;
-//     if (!id) return res.status(400).send("id cannot be empty");
-//     await Contact.deleteOne({
-//       followerId: user._id,
-//       followedId: id,
-//     });
-//     res.status(200).send("success");
-//   } catch (error) {
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.post("/api/like", authenticate, async (req, res) => {
-//   try {
-//     const { id } = req.body;
-//     const { user } = req;
-
-//     if (!id) return res.status(400).send("id cannot be empty");
-//     const updatePost = await Post.updateOne(
-//       { _id: id },
-//       {
-//         $push: { likes: user._id },
-//       }
-//     );
-//     res.status(200).json({ isLike: true });
-//   } catch (error) {
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.post("/api/unlike", authenticate, async (req, res) => {
-//   try {
-//     const { id } = req.body;
-//     const { user } = req;
-
-//     if (!id) return res.status(400).send("id cannot be empty");
-//     const updatePost = await Post.updateOne(
-//       { _id: id },
-//       {
-//         $pull: { likes: user._id },
-//       }
-//     );
-//     res.status(200).json({ isLike: true });
-//   } catch (error) {
-//     res.status(500).send(error);
-//   }
-// });
-
-// app.get("/", (req, res) => {
-//   res.send("hello");
-// });
-
-app.listen(8000, () => {
+app.listen(port, () => {
   console.log("running on server: 8000");
 });

@@ -1,17 +1,17 @@
 const mongoose = require("mongoose");
 
-const categorySchema = new mongoose.Schema({
+const subCategorySchema = new mongoose.Schema({
   name: String,
   brands: [{ type: mongoose.Schema.Types.ObjectId, ref: "BRAND" }],
 });
 
-const virtual = categorySchema.virtual("id");
+const virtual = subCategorySchema.virtual("id");
 
 virtual.get(function () {
   return this._id;
 });
 
-categorySchema.set("toJSON", {
+subCategorySchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
@@ -19,6 +19,6 @@ categorySchema.set("toJSON", {
   },
 });
 
-Category = new mongoose.model("CATEGORY", categorySchema);
+subCategory = new mongoose.model("SUBCATEGORY", subCategorySchema);
 
-module.exports = Category;
+module.exports = subCategory;

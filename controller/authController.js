@@ -4,53 +4,80 @@ const jwt = require("jsonwebtoken");
 
 exports.createUser = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const isExist = await Users.findOne({ email });
-    if (isExist) {
-      res.status(400).send("User already exist");
-    } else {
-      const user = new Users({
-        password,
-        email,
-      });
-      bcryptjs.hash(password, 10, (err, hashedPassword) => {
-        if (err) next(err);
-        user.set("password", hashedPassword);
-        user.save((error) => {
-          if (error) next(error);
-          return res.status(200).json({
-            success: true,
-            message: "user registered",
-          });
-        });
-      });
+    // Extract data from request body
+    const { email, password, userName } = req.body;
+
+    // Check if user with the provided email already exists
+    const existingUser = await Users.findOne({ email });
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User already exists" });
     }
+
+    // Hash the password
+    const hashedPassword = await bcryptjs.hash(password, 10);
+
+    // Create a new user instance
+    const newUser = new Users({
+      email,
+      password: hashedPassword,
+      userName,
+    });
+
+    // Save the user to the database
+    await newUser.save();
+
+    res
+      .status(200)
+      .json({ success: true, message: "User created successfully" });
   } catch (error) {
-    res.status(500).send("Server Error");
-    console.log(error, "error");
+    // Handle errors
+    console.error("Error creating user:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
   const user = await Users.findOne({ email: email });
-  if (!user) res.status(401).send("invalid username or password ");
-  else {
-    const validate = await bcryptjs.compare(password, user.password);
-    if (!validate) res.status(401).send("invalid username or password ");
-    else {
-      const payload = {
-        id: user?._id,
-        email: user?.email,
-      };
-      const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY || "this is screte key";
-      jwt.sign(payload, JWT_SECRET_KEY, { expiresIn: 86400 }, (err, token) => {
-        console.log(token);
-        if (err) res.json({ message: err });
-        res.status(200).json({ id: user.id, email: user.email, token });
+  try {
+    if (!user)
+      res.status(401).json({
+        success: false,
+        message: "invalid username or password",
       });
+    else {
+      const validate = await bcryptjs.compare(password, user.password);
+      if (!validate)
+        res.status(401).json({
+          success: false,
+          message: "invalid username or password",
+        });
+      else {
+        const payload = {
+          id: user?._id,
+          email: user?.email,
+        };
+        const JWT_SECRET_KEY =
+          process.env.JWT_SECRET_KEY || "this is screte key";
+        jwt.sign(
+          payload,
+          JWT_SECRET_KEY,
+          { expiresIn: 86400 },
+          (err, token) => {
+            if (err) res.json({ message: err });
+            res.status(200).send({
+              id: user.id,
+              name: user.userName,
+              email: user.email,
+              token,
+            });
+          }
+        );
+      }
     }
-  }
+  } catch (error) {}
 };
 
 // exports.createUser = async (req, res) => {

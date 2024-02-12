@@ -5,10 +5,14 @@ const {
   updateProduct,
   deleteProduct,
   fetchProductById,
+  fetchBrand,
+  FilterProducts,
 } = require("../controller/productController");
 const router = express.Router();
 
-router.route("/products").get(getAllProduct);
+router.route("/products").post(getAllProduct);
+router.route("/products/brand").get(fetchBrand);
+router.route("/product/filter").post(FilterProducts);
 router.route("/product/").post(createProduct);
 router
   .route("/product/:id")

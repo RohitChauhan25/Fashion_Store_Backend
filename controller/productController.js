@@ -1,6 +1,4 @@
 const Product = require("../modal/productModal");
-const mongoose = require("mongoose");
-const ErrorHandler = require("../utils/errorHandler");
 
 // Add Product
 exports.createProduct = async (req, res) => {
@@ -17,109 +15,78 @@ exports.createProduct = async (req, res) => {
 
 //Get All Products
 exports.getAllProduct = async (req, res) => {
-  // let condition = {};
-
-  const { category, subCategory, for: gender, sortBy, discount } = req.query;
-  let subCategoryArray;
-
-  if (subCategory) {
-    subCategoryArray = JSON.parse(subCategory);
-  }
+  const { category, sortBy, discount, brands, price, page } = req.body;
 
   const filter = {};
-  const sortOptions = {};
-  if (category) {
-    filter.category = category;
-  }
-  if (subCategoryArray?.length > 0) {
-    console.log(subCategory, "subCategory");
-    filter.subCategory = subCategoryArray;
-  }
-  if (gender) {
-    filter.for = gender;
+
+  let pageNo = page ? page : 1;
+  let limit = 10;
+
+  if (brands && brands.length > 0) {
+    filter.brand = { $in: brands };
   }
 
-  if (discount) {
-    // Add a filter for products with a discount of 10% or more
-    filter.discountPercentage = { $gte: discount };
+  category && (filter.category = category);
+  discount && (filter.discountPercentage = { $gte: discount });
+
+  try {
+    let query = Product.find(filter);
+
+    // Apply pagination
+    query = query.skip((pageNo - 1) * limit).limit(limit);
+
+    let fetchedProducts = await query;
+    let min = 100000000;
+    let max = 0;
+    if (price?.length > 0) {
+      price?.map((data) => {
+        const Val = data?.split("-");
+        if (Val[0] < min) {
+          min = Val[0];
+        }
+        if (Val[1] > max) {
+          max = Val[1];
+        }
+      });
+      fetchedProducts = fetchedProducts?.filter((item) => {
+        const price = Math.floor(
+          item?.price - (item?.price * item?.discountPercentage) / 100
+        );
+        if (min <= price && price <= max) return item;
+      });
+    }
+
+    if (sortBy != "relevance")
+      fetchedProducts.sort((a, b) => {
+        return sortBy == "lowestFirst" ? a.price - b.price : b.price - a.price;
+      });
+
+    const totalCount = await Product.countDocuments(filter);
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    const responseData = {
+      products: fetchedProducts,
+      pagination: {
+        totalCount,
+        totalPages,
+        currentPage: page,
+        hasNextPage,
+        hasPrevPage,
+        limit,
+      },
+    };
+
+    if (fetchedProducts) {
+      res.json(responseData);
+    }
+  } catch (error) {
+    console.error("Error finding products:", error);
+    res.status(500).send("Internal Server Error");
   }
-
-  if (sortBy === "price") {
-    sortOptions.price = 1; // 1 for ascending order, -1 for descending order
-  }
-  // const filter = {
-  //   category,
-  //   subCategory: { $in: subCategoryArray },
-  //   for: gender,
-  // };
-
-  Product.find(filter)
-    .sort(sortOptions)
-    .then((products) => {
-      res.json(products);
-    })
-    .catch((error) => {
-      console.error("Error finding products:", error);
-      res.status(500).send("Internal Server Error");
-    });
-
-  // Initialize the main query and the total count query
-  // let query = Product.find(condition);
-  // let totalProductsQuery = Product.find(condition);
-
-  // // Filtering based on category
-  // if (req.query.category) {
-  //   const categories = req.query.category.split(",");
-  //   query = query.where("category").in(categories);
-  //   totalProductsQuery = totalProductsQuery.where("category").in(categories);
-  // }
-
-  // if (req.query.subCategory) {
-  //   const subcategories = req.query.subCategory.split(",");
-  //   query = query.where("subCategory").in(subcategories);
-  //   totalProductsQuery = totalProductsQuery
-  //     .where("subCategory")
-  //     .in(subcategories);
-  // }
-
-  // if (req.query.for) {
-  //   const fors = req.query.for.split(",");
-  //   query = query.where("for").in(fors);
-  //   totalProductsQuery = totalProductsQuery.where("for").in(fors);
-  // }
-
-  // if (req.query.brand) {
-  //   const brands = req.query.brand.split(",");
-  //   query = query.where("brand").in(brands);
-  //   totalProductsQuery = totalProductsQuery.where("brand").in(brands);
-  // }
-
-  // // Pagination
-  // if (req.query._page && req.query._limit) {
-  //   const pageSize = parseInt(req.query._limit);
-  //   const page = parseInt(req.query._page);
-  //   query = query.skip(pageSize * (page - 1)).limit(pageSize);
-  // }
-
-  // // Sorting
-  // if (req.query._sort && req.query._order) {
-  //   const sortField = req.query._sort;
-  //   const sortOrder = req.query._order === "desc" ? -1 : 1; // Default to ascending order
-  //   query = query.sort({ [sortField]: sortOrder });
-  // }
-
-  // try {
-  //   const docs = await query.exec();
-  //   const totalDocs = await totalProductsQuery.countDocuments();
-
-  //   // Set the total count response header
-  //   res.set("X-Total-Count", totalDocs);
-
-  //   res.status(200).json(docs);
-  // } catch (error) {
-  //   console.log(error);
-  //   res.status(400).json(error);
-  // }
 };
 
 //get single Product
@@ -134,6 +101,84 @@ exports.fetchProductById = async (req, res) => {
   }
 };
 
+//get single Product
+exports.FilterProducts = async (req, res) => {
+  const {
+    type,
+    brands,
+    category,
+    subcategory,
+    price,
+    discountPercentage,
+    for: gender,
+  } = req.body;
+
+  try {
+    let query = {};
+
+    if (gender) {
+      query.for = gender;
+    }
+    if (subcategory && subcategory != "all") {
+      query.subCategory = subcategory;
+    }
+    if (type) {
+      query.type = type;
+    }
+    if (brands && brands.length > 0) {
+      query.brand = { $in: brands };
+    }
+
+    if (discountPercentage) {
+      query.discountPercentage = { $gte: discountPercentage };
+    }
+    if (category) {
+      query.category = category;
+    }
+
+    let products = await Product.find(query);
+    let min = 100000000;
+    let max = 0;
+    if (price?.length > 0) {
+      console.log(price);
+      price?.map((data) => {
+        const Val = data?.split("-");
+        if (Val[0] < min) {
+          min = Val[0];
+        }
+        if (Val[1] > max) {
+          max = Val[1];
+        }
+      });
+      products = products?.filter((item) => {
+        const price = Math.floor(
+          item?.price - (item?.price * item?.discountPercentage) / 100
+        );
+        if (min <= price && price <= max) return item;
+      });
+    }
+    res.status(200).json(products);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.fetchBrand = async (req, res) => {
+  const { subCategory, type, for: gender } = req.query;
+  const filter = {};
+  if (subCategory) filter.subCategory = subCategory;
+  if (gender) filter.for = gender.trim();
+  if (type) filter.type = type;
+
+  console.log(filter, "filter");
+  try {
+    const brand = await Product.find(filter, "brand");
+    const uniqueBrands = Array.from(new Set(brand.map((item) => item.brand)));
+    res.status(200).json(uniqueBrands);
+  } catch (err) {
+    res.status(400).json(err);
+  }
+};
 // exports.getSingleProduct = async (req, res, next) => {
 //   const { id } = req.params;
 
